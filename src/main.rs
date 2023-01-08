@@ -1,4 +1,4 @@
-mod server;
+use tiny_redis::server;
 
 fn main() {
     let endpoint = server::Endpoint {
