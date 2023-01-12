@@ -60,20 +60,17 @@ mod tests {
         let queue = Queue::new();
 
         let queue_1 = queue.clone();
-        let thread_1 = thread::spawn(move || {
+        thread::spawn(move || {
             queue_1.enqueue(1);
             queue_1.enqueue(2);
         });
 
         let queue_2 = queue.clone();
-        let thread_2 = thread::spawn(move || {
+        thread::spawn(move || {
             queue_2.enqueue(3);
             thread::sleep(time::Duration::from_secs(2));
             queue_2.enqueue(4);
         });
-
-        thread_1.join().unwrap();
-        thread_2.join().unwrap();
 
         let mut values = vec![];
         for _i in 1..=4 {

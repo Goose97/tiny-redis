@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate bencher;
 use std::thread::{self, JoinHandle};
-use tiny_redis::job_queue::{channel_queue, deque, JobQueue};
+use tiny_redis::job_queue::{channel_queue, deque, disruptor, JobQueue};
 
 use bencher::Bencher;
 
@@ -89,6 +89,47 @@ fn channel_queue_multi_thread_dequeue(bench: &mut Bencher) {
     })
 }
 
+fn disruptor_single_thread_enqueue(bench: &mut Bencher) {
+    const SIZE: usize = 1 << 8;
+    bench.iter(|| {
+        let queue = disruptor::Queue::<_, SIZE>::new();
+        for i in 1..=100 {
+            queue.enqueue(i);
+        }
+    })
+}
+
+fn disruptor_multi_thread_enqueue(bench: &mut Bencher) {
+    // Since we only test enqueue, queue should be size with bigger capacity
+    // than the number of test items
+    const SIZE: usize = 1 << 10;
+    bench.iter(|| {
+        let queue = disruptor::Queue::<_, SIZE>::new();
+
+        for _i in 1..=N_THREAD {
+            let clone = queue.clone();
+            thread::spawn(move || {
+                for i in 1..=100 {
+                    clone.enqueue(i);
+                }
+            });
+        }
+    })
+}
+
+fn disruptor_single_thread_dequeue(bench: &mut Bencher) {
+    const SIZE: usize = 1 << 20;
+    let queue = disruptor::Queue::<_, SIZE>::new();
+
+    for i in 1..=1_000_000 {
+        queue.enqueue(i);
+    }
+
+    bench.iter(|| {
+        queue.dequeue();
+    })
+}
+
 benchmark_group!(
     job_queue,
     deque_single_thread_enqueue,
@@ -96,6 +137,9 @@ benchmark_group!(
     deque_single_thread_dequeue,
     channel_queue_single_thread_enqueue,
     channel_queue_multi_thread_enqueue,
-    channel_queue_multi_thread_dequeue
+    channel_queue_multi_thread_dequeue,
+    disruptor_single_thread_enqueue,
+    disruptor_multi_thread_enqueue,
+    disruptor_single_thread_dequeue
 );
 benchmark_main!(job_queue);

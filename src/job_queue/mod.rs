@@ -1,5 +1,6 @@
 pub mod deque;
 pub mod channel_queue;
+pub mod disruptor;
 
 // Multiple producers / single consumer job queue
 pub trait JobQueue<T> {

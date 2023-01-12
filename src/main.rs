@@ -1,7 +1,7 @@
 use tiny_redis::server;
 
 fn main() {
-    // While researching this topic, we found an interesting performance problem from Linux 
+    // While researching this topic, we found an interesting performance problem from Linux
     // kernel in the past. This issue is called Thundering herd.
     // It happens when multiple threads are waiting on accept() call on the same socket.
     // When the new connection arrives, every threads will be woke up, but only one thread
