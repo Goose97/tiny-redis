@@ -102,9 +102,7 @@ fn expect_binary(arguments: &mut Vec<Token>) -> Result<Vec<u8>, Error> {
 #[derive(Debug)]
 pub enum Token {
     String(Vec<u8>),
-    Integer(isize),
     Array(usize),
-    Error(String),
 }
 
 struct TokenIter<T: Read>(BufReader<T>);
