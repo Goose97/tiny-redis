@@ -11,6 +11,11 @@ path = "src/lib.rs"
 
 [dependencies]
 bencher = "0.1.5"
+env_logger = "0.10.0"
+log = "0.4.17"
+
+[dev-dependencies]
+redis = "0.22.2"
 
 [[bench]]
 name = "main"

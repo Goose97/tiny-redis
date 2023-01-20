@@ -1,6 +1,8 @@
-use tiny_redis::server;
+use tiny_redis::server::Server;
 
 fn main() {
+    env_logger::init();
+
     // While researching this topic, we found an interesting performance problem from Linux
     // kernel in the past. This issue is called Thundering herd.
     // It happens when multiple threads are waiting on accept() call on the same socket.
@@ -11,10 +13,9 @@ fn main() {
     // Some interesting links:
     // https://uwsgi-docs.readthedocs.io/en/latest/articles/SerializingAccept.html
     // http://www.citi.umich.edu/projects/linux-scalability/reports/accept.html
-    let endpoint = server::Endpoint {
+    let endpoint = Server {
         interface: String::from("127.0.0.1"),
         port: 7878,
-        num_acceptors: 4,
     };
 
     endpoint.start();
