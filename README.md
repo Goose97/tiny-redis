@@ -11,7 +11,7 @@ This project serves as Rust learning materials.
 2. [String commands](https://redis.io/commands/?group=string)
 - [x] GET
 - [x] SET
-- [ ] SETNX
+- [x] SETNX
 - [ ] MGET
 - [ ] MSET
 - [ ] GETSET

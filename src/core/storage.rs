@@ -14,7 +14,7 @@ impl Storage {
         }
     }
 
-    pub fn get(&self, key: Key) -> Option<&VString> {
+    pub fn get(&self, key: &Key) -> Option<&VString> {
         self.hash_map.get(&key.0)
     }
 
