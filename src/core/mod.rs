@@ -8,6 +8,8 @@ pub enum Command {
     Set(Key, Vec<u8>),
     SetNx(Key, Vec<u8>),
     GetSet(Key, Vec<u8>),
+    MGet(Vec<Key>),
+    MSet(Vec<Key>, Vec<Vec<u8>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -44,10 +46,7 @@ impl Core {
     pub fn handle_command(&mut self, command: Command) -> Result<CommandResponse, CommandError> {
         try {
             match command {
-                Command::Get(key) => match self.storage.get(&key) {
-                    Some(value_string) => CommandResponse::SimpleString(value_string.0.to_owned()),
-                    None => CommandResponse::Null,
-                },
+                Command::Get(key) => self.get(&key),
                 Command::Set(key, value) => {
                     self.storage.set(key, VString(value));
                     CommandResponse::SimpleString("OK".as_bytes().to_vec())
@@ -63,7 +62,30 @@ impl Core {
                     Some(VString(bytes)) => CommandResponse::BulkString(bytes),
                     None => CommandResponse::Null,
                 },
+                Command::MGet(keys) => {
+                    let values = keys
+                        .iter()
+                        .map(|key| self.get(&key))
+                        .collect::<Vec<CommandResponse>>();
+
+                    CommandResponse::Array(values)
+                }
+                Command::MSet(keys, mut values) => {
+                    keys.into_iter().for_each(|key| {
+                        let value = values.remove(0);
+                        self.storage.set(key, VString(value));
+                    });
+
+                    CommandResponse::SimpleString("OK".as_bytes().to_vec())
+                }
             }
+        }
+    }
+
+    fn get(&self, key: &Key) -> CommandResponse {
+        match self.storage.get(&key) {
+            Some(value_string) => CommandResponse::SimpleString(value_string.0.to_owned()),
+            None => CommandResponse::Null,
         }
     }
 }
@@ -102,6 +124,35 @@ mod tests {
         let command = Command::SetNx(key("key"), string("123"));
         let response = core.handle_command(command).unwrap();
         assert_eq!(response, CommandResponse::Integer(0));
+    }
+
+    #[test]
+    fn m_get_and_m_set() {
+        let mut core = Core::new();
+        let keys = vec![key("key1"), key("key2")];
+        let command = Command::MGet(keys.to_owned());
+        let response = core.handle_command(command).unwrap();
+        assert_eq!(
+            response,
+            CommandResponse::Array(vec![CommandResponse::Null, CommandResponse::Null])
+        );
+
+        let command = Command::MSet(
+            vec![key("key1"), key("key2")],
+            vec![string("123"), string("456")],
+        );
+        let response = core.handle_command(command).unwrap();
+        assert_response_ok(response);
+
+        let command = Command::MGet(keys);
+        let response = core.handle_command(command).unwrap();
+        assert_eq!(
+            response,
+            CommandResponse::Array(vec![
+                CommandResponse::SimpleString(string("123")),
+                CommandResponse::SimpleString(string("456"))
+            ])
+        );
     }
 
     fn assert_response_ok(response: CommandResponse) {

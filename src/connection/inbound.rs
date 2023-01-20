@@ -32,31 +32,66 @@ impl<T: Read> CommandIter<T> {
         let command = command(&mut token_iter)?;
         let mut arguments = arguments(&mut token_iter, command_size - 1)?;
 
-        match command.borrow() {
-            "GET" => {
-                let key = expect_key(&mut arguments)?;
-                return Ok(Command::Get(key));
-            }
+        try {
+            match command.borrow() {
+                "GET" => {
+                    let key = expect_key(&mut arguments)?;
+                    Command::Get(key)
+                }
 
-            "SET" => {
-                let key = expect_key(&mut arguments)?;
-                let value = expect_binary(&mut arguments)?;
-                return Ok(Command::Set(key, value));
-            }
+                "SET" => {
+                    let key = expect_key(&mut arguments)?;
+                    let value = expect_binary(&mut arguments)?;
+                    Command::Set(key, value)
+                }
 
-            "SETNX" => {
-                let key = expect_key(&mut arguments)?;
-                let value = expect_binary(&mut arguments)?;
-                return Ok(Command::SetNx(key, value));
-            }
+                "SETNX" => {
+                    let key = expect_key(&mut arguments)?;
+                    let value = expect_binary(&mut arguments)?;
+                    Command::SetNx(key, value)
+                }
 
-            "GETSET" => {
-                let key = expect_key(&mut arguments)?;
-                let value = expect_binary(&mut arguments)?;
-                return Ok(Command::GetSet(key, value));
-            }
+                "GETSET" => {
+                    let key = expect_key(&mut arguments)?;
+                    let value = expect_binary(&mut arguments)?;
+                    Command::GetSet(key, value)
+                }
 
-            _ => unimplemented!(),
+                "MGET" => {
+                    let mut keys = vec![];
+                    while !arguments.is_empty() {
+                        let key = expect_key(&mut arguments)?;
+                        keys.push(key);
+                    }
+                    Command::MGet(keys)
+                }
+
+                "MSET" => {
+                    let mut keys = vec![];
+                    let mut values = vec![];
+                    let mut index = 0;
+
+                    while !arguments.is_empty() {
+                        if index % 2 == 0 {
+                            let key = expect_key(&mut arguments)?;
+                            keys.push(key);
+                        } else {
+                            let value = expect_binary(&mut arguments)?;
+                            values.push(value);
+                        }
+
+                        index += 1;
+                    }
+
+                    if keys.len() != values.len() {
+                        return Err(Error::MissingArguments(1));
+                    } else {
+                        Command::MSet(keys, values)
+                    }
+                }
+
+                _ => unimplemented!(),
+            }
         }
     }
 }
@@ -104,7 +139,7 @@ fn arguments<T: Read>(token_iter: &mut TokenIter<T>, num: usize) -> Result<Vec<T
 }
 
 fn expect_key(arguments: &mut Vec<Token>) -> Result<Key, Error> {
-    if let Token::String(vec) = arguments.swap_remove(0) {
+    if let Token::String(vec) = arguments.remove(0) {
         return Ok(Key(vec));
     } else {
         return Err(Error::KeyNotFound);
@@ -112,7 +147,7 @@ fn expect_key(arguments: &mut Vec<Token>) -> Result<Key, Error> {
 }
 
 fn expect_binary(arguments: &mut Vec<Token>) -> Result<Vec<u8>, Error> {
-    let first = arguments.swap_remove(0);
+    let first = arguments.remove(0);
 
     if let Token::String(vec) = first {
         return Ok(vec);
