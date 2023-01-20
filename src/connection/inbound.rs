@@ -1,3 +1,6 @@
+/// Handle inbound requests a.k.a commands
+/// The main interface is CommandIter struct which is an iterator
+/// over commands
 use std::{
     borrow::Borrow,
     io,
@@ -5,24 +8,27 @@ use std::{
     str,
 };
 
-use super::core::{Command, Key};
+use crate::core::{Command, Key};
 
-pub struct Parser<T: Read>(pub T);
+pub struct CommandIter<T: Read>(pub TokenIter<T>);
 
 #[derive(Debug)]
 pub enum Error {
     KeyNotFound,
-    UnexpectedToken { expect: Token, found: Token },
+    UnexpectedToken { expect: Token, found: Option<Token> },
     MissingArguments(usize),
     MissingCrlf,
     IoError(io::Error),
 }
 
-impl<T: Read> Parser<T> {
-    pub fn parse(self) -> Result<Command, Error> {
-        let mut token_iter = self.into_token_iter();
+impl<T: Read> CommandIter<T> {
+    pub fn new(stream: T) -> Self {
+        Self(TokenIter(BufReader::new(stream)))
+    }
 
-        let command_size = command_size(&mut token_iter);
+    fn parse(&mut self) -> Result<Command, Error> {
+        let mut token_iter = &mut self.0;
+        let command_size = command_size(&mut token_iter)?;
         let command = command(&mut token_iter)?;
         let mut arguments = arguments(&mut token_iter, command_size - 1)?;
 
@@ -41,19 +47,26 @@ impl<T: Read> Parser<T> {
             _ => unimplemented!(),
         }
     }
+}
 
-    fn into_token_iter(self) -> TokenIter<T> {
-        TokenIter(BufReader::new(self.0))
+impl<T: Read> Iterator for CommandIter<T> {
+    type Item = Command;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.parse().ok()
     }
 }
 
-fn command_size<T: Read>(token_iter: &mut TokenIter<T>) -> usize {
+fn command_size<T: Read>(token_iter: &mut TokenIter<T>) -> Result<usize, Error> {
     let token = token_iter.next();
 
     if let Some(Token::Array(size)) = token {
-        size
+        Ok(size)
     } else {
-        panic!("Expected be array size");
+        Err(Error::UnexpectedToken {
+            expect: Token::Array(0),
+            found: None,
+        })
     }
 }
 
@@ -64,7 +77,7 @@ fn command<T: Read>(token_iter: &mut TokenIter<T>) -> Result<String, Error> {
     } else {
         Err(Error::UnexpectedToken {
             expect: Token::String(vec![]),
-            found: token.unwrap(),
+            found: None,
         })
     }
 }
@@ -94,7 +107,7 @@ fn expect_binary(arguments: &mut Vec<Token>) -> Result<Vec<u8>, Error> {
     } else {
         return Err(Error::UnexpectedToken {
             expect: Token::String(vec![]),
-            found: first,
+            found: Some(first),
         });
     }
 }
@@ -105,13 +118,16 @@ pub enum Token {
     Array(usize),
 }
 
-struct TokenIter<T: Read>(BufReader<T>);
+pub struct TokenIter<T: Read>(BufReader<T>);
 
 impl<T: Read> TokenIter<T> {
-    fn consume_bytes(&mut self, amount: usize) -> Vec<u8> {
+    fn consume_bytes(&mut self, amount: usize) -> Result<Vec<u8>, Error> {
         let mut buffer: Vec<u8> = vec![0; amount];
-        self.0.read_exact(&mut buffer).unwrap();
-        buffer
+        self.0
+            .read_exact(&mut buffer)
+            .map_err(|err| -> _ { Error::IoError(err) })?;
+
+        Ok(buffer)
     }
 
     // Omits the /r and /n char
@@ -129,32 +145,42 @@ impl<T: Read> TokenIter<T> {
             Err(Error::MissingCrlf)
         }
     }
+
+    fn next_token(&mut self) -> Result<Token, Error> {
+        let prefix = self.consume_bytes(1)?;
+
+        match prefix[0] {
+            // $
+            36 => {
+                let line = self.consume_line()?;
+                let bulk_string_len = bytes_to_integer(line);
+
+                // Consume the length of the string plus following /r/n
+                let string = self.consume_bytes(bulk_string_len)?;
+                self.consume_bytes(2)?;
+                return Ok(Token::String(string));
+            }
+            // *
+            42 => {
+                let line = self.consume_line().unwrap();
+                let num_of_items = bytes_to_integer(line);
+                return Ok(Token::Array(num_of_items));
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl<T: Read> Iterator for TokenIter<T> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let prefix = self.consume_bytes(1);
-
-        match prefix[0] {
-            // $
-            36 => {
-                let line = self.consume_line().unwrap();
-                let bulk_string_len = bytes_to_integer(line);
-
-                // Consume the length of the string plus following /r/n
-                let string = self.consume_bytes(bulk_string_len);
-                self.consume_bytes(2);
-                return Some(Token::String(string));
+        match self.next_token() {
+            Ok(token) => Some(token),
+            Err(error) => {
+                println!("Encounter error while emiting new token. Error: {error:?}");
+                None
             }
-            // *
-            42 => {
-                let line = self.consume_line().unwrap();
-                let num_of_items = bytes_to_integer(line);
-                return Some(Token::Array(num_of_items));
-            }
-            _ => unreachable!(),
         }
     }
 }
@@ -167,10 +193,11 @@ fn bytes_to_string(bytes: Vec<u8>) -> String {
     String::from(str::from_utf8(&bytes).unwrap())
 }
 
+#[cfg(test)]
 mod tests {
+    use crate::connection::inbound::CommandIter;
+    use crate::connection::mock_tcp_stream::MockTcpStream;
     use crate::core::Command;
-    use crate::mock_tcp_stream::MockTcpStream;
-    use crate::parser::Parser;
 
     #[test]
     fn get() {
@@ -178,8 +205,8 @@ mod tests {
         let input = format!("*2\r\n$3\r\nGET\r\n$3\r\n{}\r\n", key);
         let stream = MockTcpStream::new(input.as_bytes());
 
-        let parser = Parser(stream);
-        if let Ok(Command::Get(key)) = parser.parse() {
+        let mut command_iter = CommandIter::new(stream);
+        if let Some(Command::Get(key)) = command_iter.next() {
             assert_eq!(key.0, "key".as_bytes());
         } else {
             panic!("Failed to parse command");
@@ -193,8 +220,8 @@ mod tests {
         let input = format!("*3\r\n$3\r\nSET\r\n$3\r\n{}\r\n$3\r\n{}\r\n", key, value);
         let stream = MockTcpStream::new(input.as_bytes());
 
-        let parser = Parser(stream);
-        if let Ok(Command::Set(key, value)) = parser.parse() {
+        let mut command_iter = CommandIter::new(stream);
+        if let Some(Command::Set(key, value)) = command_iter.next() {
             assert_eq!(key.0, "key".as_bytes());
             assert_eq!(value, "123".as_bytes());
         } else {

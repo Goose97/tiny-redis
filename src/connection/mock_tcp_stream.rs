@@ -21,6 +21,7 @@ impl Read for MockTcpStream {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::MockTcpStream;
     use std::io::Read;
