@@ -4,7 +4,7 @@ use redis::Commands;
 use std::thread;
 
 #[test]
-fn string_commands() {
+fn it_works() {
     thread::spawn(|| common::setup());
     let mut conn = common::connect();
     let result: Option<String> = conn.get("key").unwrap();
