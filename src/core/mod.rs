@@ -16,6 +16,7 @@ pub enum CommandResponse {
     Array(Vec<CommandResponse>),
     Error(String),
     Null,
+    NullArray,
 }
 
 #[derive(Debug)]
@@ -52,6 +53,7 @@ impl Core {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::{Command, CommandResponse, Core, Key};
 
