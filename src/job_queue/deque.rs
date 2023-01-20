@@ -2,7 +2,6 @@ use super::JobQueue;
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
-use std::{thread, time};
 
 /// This implemention using VecDeque as storage layer
 /// To mimic blocking behaviour when dequeue, use loop to keep polling
