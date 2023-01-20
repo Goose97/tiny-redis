@@ -7,6 +7,7 @@ pub enum Command {
     Get(Key),
     Set(Key, Vec<u8>),
     SetNx(Key, Vec<u8>),
+    GetSet(Key, Vec<u8>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -58,6 +59,10 @@ impl Core {
                         CommandResponse::Integer(1)
                     }
                 },
+                Command::GetSet(key, value) => match self.storage.set(key, VString(value)) {
+                    Some(VString(bytes)) => CommandResponse::BulkString(bytes),
+                    None => CommandResponse::Null,
+                },
             }
         }
     }
@@ -81,6 +86,10 @@ mod tests {
         let command = Command::Get(key("key"));
         let response = core.handle_command(command).unwrap();
         assert_eq!(response, CommandResponse::SimpleString(string("123")));
+
+        let command = Command::GetSet(key("key"), string("456"));
+        let response = core.handle_command(command).unwrap();
+        assert_eq!(response, CommandResponse::BulkString(string("123")));
     }
 
     #[test]

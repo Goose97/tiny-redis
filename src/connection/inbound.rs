@@ -50,6 +50,12 @@ impl<T: Read> CommandIter<T> {
                 return Ok(Command::SetNx(key, value));
             }
 
+            "GETSET" => {
+                let key = expect_key(&mut arguments)?;
+                let value = expect_binary(&mut arguments)?;
+                return Ok(Command::GetSet(key, value));
+            }
+
             _ => unimplemented!(),
         }
     }

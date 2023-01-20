@@ -14,7 +14,7 @@ This project serves as Rust learning materials.
 - [x] SETNX
 - [ ] MGET
 - [ ] MSET
-- [ ] GETSET
+- [x] GETSET
 - [ ] GETDEL
 - [ ] INCR
 - [ ] DECR

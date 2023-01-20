@@ -18,7 +18,7 @@ impl Storage {
         self.hash_map.get(&key.0)
     }
 
-    pub fn set(&mut self, key: Key, value: VString) {
-        self.hash_map.insert(key.0, value);
+    pub fn set(&mut self, key: Key, value: VString) -> Option<VString> {
+        self.hash_map.insert(key.0, value)
     }
 }
