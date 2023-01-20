@@ -1,6 +1,7 @@
 use super::JobQueue;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Instant;
 use std::{thread, time};
 
 /// This implemention using VecDeque as storage layer
@@ -8,29 +9,35 @@ use std::{thread, time};
 #[derive(Clone)]
 pub struct Queue<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
+    cvar: Arc<Condvar>,
 }
 
 impl<T> Queue<T> {
     pub fn new() -> Self {
         Self {
             queue: Arc::new(Mutex::new(VecDeque::new())),
+            cvar: Arc::new(Condvar::new()),
         }
     }
 }
 
 impl<T> JobQueue<T> for Queue<T> {
     fn enqueue(&self, item: T) {
+        let start = Instant::now();
         let mut guard = self.queue.lock().unwrap();
+        let duration = start.elapsed();
+        log::debug!("job_queue acquire mutex took: {duration:?}");
         (*guard).push_back(item);
+        self.cvar.notify_one();
     }
 
-    // Since there's only one consumer, don't bother locking
     fn dequeue(&self) -> T {
+        let mut guard = self.queue.lock().unwrap();
+
         loop {
-            match self.queue.lock().unwrap().pop_front() {
+            match guard.pop_front() {
                 Some(value) => return value,
-                // Spin lock
-                None => thread::sleep(time::Duration::from_millis(1)),
+                None => guard = self.cvar.wait(guard).unwrap(),
             }
         }
     }
