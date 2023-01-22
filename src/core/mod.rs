@@ -1,4 +1,5 @@
 pub mod storage;
+
 use self::storage::Storage;
 
 #[derive(Debug, Clone)]
@@ -13,11 +14,11 @@ pub enum Command {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum CommandResponse {
-    SimpleString(Vec<u8>),
+pub enum CommandResponse<'a> {
+    SimpleString(&'a [u8]),
     BulkString(Vec<u8>),
     Integer(isize),
-    Array(Vec<CommandResponse>),
+    Array(Vec<CommandResponse<'a>>),
     Error(String),
     Null,
     NullArray,
@@ -49,7 +50,7 @@ impl Core {
                 Command::Get(key) => self.get(&key),
                 Command::Set(key, value) => {
                     self.storage.set(key, VString(value));
-                    CommandResponse::SimpleString("OK".as_bytes().to_vec())
+                    CommandResponse::SimpleString(b"OK")
                 }
                 Command::SetNx(key, value) => match self.storage.get(&key) {
                     Some(_) => CommandResponse::Integer(0),
@@ -76,7 +77,7 @@ impl Core {
                         self.storage.set(key, VString(value));
                     });
 
-                    CommandResponse::SimpleString("OK".as_bytes().to_vec())
+                    CommandResponse::SimpleString(b"OK")
                 }
             }
         }
@@ -84,7 +85,7 @@ impl Core {
 
     fn get(&self, key: &Key) -> CommandResponse {
         match self.storage.get(&key) {
-            Some(value_string) => CommandResponse::SimpleString(value_string.0.to_owned()),
+            Some(value_string) => CommandResponse::SimpleString(value_string.0.as_slice()),
             None => CommandResponse::Null,
         }
     }
@@ -107,11 +108,11 @@ mod tests {
 
         let command = Command::Get(key("key"));
         let response = core.handle_command(command).unwrap();
-        assert_eq!(response, CommandResponse::SimpleString(string("123")));
+        assert_eq!(response, CommandResponse::SimpleString(b"123"));
 
         let command = Command::GetSet(key("key"), string("456"));
         let response = core.handle_command(command).unwrap();
-        assert_eq!(response, CommandResponse::BulkString(string("123")));
+        assert_eq!(response, CommandResponse::BulkString(b"123".to_vec()));
     }
 
     #[test]
@@ -149,14 +150,14 @@ mod tests {
         assert_eq!(
             response,
             CommandResponse::Array(vec![
-                CommandResponse::SimpleString(string("123")),
-                CommandResponse::SimpleString(string("456"))
+                CommandResponse::SimpleString(b"123"),
+                CommandResponse::SimpleString(b"456")
             ])
         );
     }
 
     fn assert_response_ok(response: CommandResponse) {
-        let ok_response = CommandResponse::SimpleString(b"OK".to_vec());
+        let ok_response = CommandResponse::SimpleString(b"OK");
         assert_eq!(response, ok_response);
     }
 

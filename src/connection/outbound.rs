@@ -6,29 +6,21 @@ pub fn encode(response: CommandResponse) -> Vec<u8> {
     let mut vec = vec![];
     match response {
         // +OK\r\n
-        CommandResponse::SimpleString(mut bytes) => {
-            vec.extend_from_slice(b"+");
-            vec.append(&mut bytes);
-            vec.extend_from_slice(b"\r\n");
+        CommandResponse::SimpleString(bytes) => {
+            vec = [b"+", bytes, b"\r\n"].concat();
         }
         // $4\r\nBULK\r\n
-        CommandResponse::BulkString(mut bytes) => {
+        CommandResponse::BulkString(bytes) => {
             let content = format!("${}\r\n", bytes.len());
-            vec.extend_from_slice(content.as_bytes());
-            vec.append(&mut bytes);
-            vec.extend_from_slice(b"\r\n");
+            vec = [content.as_bytes(), bytes.as_slice(), b"\r\n"].concat();
         }
         // :1000\r\n
         CommandResponse::Integer(integer) => {
-            vec.extend_from_slice(b":");
-            vec.extend_from_slice(integer.to_string().as_bytes());
-            vec.extend_from_slice(b"\r\n");
+            vec = [b":", integer.to_string().as_bytes(), b"\r\n"].concat();
         }
         // -ERROR\r\n
         CommandResponse::Error(string) => {
-            vec.extend_from_slice(b"-");
-            vec.extend_from_slice(string.as_bytes());
-            vec.extend_from_slice(b"\r\n");
+            vec = [b"-", string.as_bytes(), b"\r\n"].concat();
         }
         // $-1\r\n
         CommandResponse::Null => {
@@ -60,7 +52,7 @@ mod tests {
 
     #[test]
     fn simple_string() {
-        let response = CommandResponse::SimpleString(b"Hello World".to_vec());
+        let response = CommandResponse::SimpleString(b"Hello World");
         assert_eq!(encode(response), b"+Hello World\r\n");
     }
 
@@ -91,7 +83,7 @@ mod tests {
     #[test]
     fn array() {
         let vec = vec![
-            CommandResponse::SimpleString(b"Hello World".to_vec()),
+            CommandResponse::SimpleString(b"Hello World"),
             CommandResponse::BulkString(b"Hello World".to_vec()),
             CommandResponse::Integer(1024),
             CommandResponse::Error(String::from("Goodbye World")),
