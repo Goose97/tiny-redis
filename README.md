@@ -3,7 +3,7 @@ This project serves as Rust learning materials.
 
 ## Support commands
 1. [Generic commands](https://redis.io/commands/?group=generic)
-- [ ] DEL
+- [X] DEL
 - [ ] EXPIRE
 - [ ] TTL
 - [ ] EXISTS
@@ -15,7 +15,7 @@ This project serves as Rust learning materials.
 - [x] MGET
 - [x] MSET
 - [x] GETSET
-- [ ] GETDEL
+- [x] GETDEL
 - [ ] INCR
 - [ ] DECR
 - [ ] INCRBY

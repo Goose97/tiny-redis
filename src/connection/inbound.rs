@@ -34,27 +34,29 @@ impl<T: Read> CommandIter<T> {
 
         try {
             match command.borrow() {
-                "GET" => {
-                    let key = expect_key(&mut arguments)?;
-                    Command::Get(key)
+                "DEL" => {
+                    let keys = expect_keys(&mut arguments)?;
+                    Command::Del(keys)
                 }
 
-                "SET" => {
+                command @ ("GET" | "GETDEL") => {
                     let key = expect_key(&mut arguments)?;
-                    let value = expect_binary(&mut arguments)?;
-                    Command::Set(key, value)
+                    match command {
+                        "GET" => Command::Get(key),
+                        "GETDEL" => Command::GetDel(key),
+                        _ => unreachable!(),
+                    }
                 }
 
-                "SETNX" => {
+                command @ ("SET" | "SETNX" | "GETSET") => {
                     let key = expect_key(&mut arguments)?;
                     let value = expect_binary(&mut arguments)?;
-                    Command::SetNx(key, value)
-                }
-
-                "GETSET" => {
-                    let key = expect_key(&mut arguments)?;
-                    let value = expect_binary(&mut arguments)?;
-                    Command::GetSet(key, value)
+                    match command {
+                        "SET" => Command::Set(key, value),
+                        "SETNX" => Command::SetNx(key, value),
+                        "GETSET" => Command::GetSet(key, value),
+                        _ => unreachable!(),
+                    }
                 }
 
                 "MGET" => {
@@ -144,6 +146,19 @@ fn expect_key(arguments: &mut Vec<Token>) -> Result<Key, Error> {
     } else {
         return Err(Error::KeyNotFound);
     }
+}
+
+fn expect_keys(arguments: &mut Vec<Token>) -> Result<Vec<Key>, Error> {
+    let mut keys = vec![];
+
+    while !arguments.is_empty() {
+        match expect_key(arguments) {
+            Ok(key) => keys.push(key),
+            Err(error) => return Err(error),
+        }
+    }
+
+    Ok(keys)
 }
 
 fn expect_binary(arguments: &mut Vec<Token>) -> Result<Vec<u8>, Error> {

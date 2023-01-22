@@ -33,4 +33,8 @@ impl Storage {
     pub fn set(&mut self, key: Key, value: VString) {
         self.hash_map.insert(key.0, StorageValue::String(value));
     }
+
+    pub fn delete(&mut self, key: &Key) -> bool {
+        self.hash_map.remove(&key.0).is_some()
+    }
 }

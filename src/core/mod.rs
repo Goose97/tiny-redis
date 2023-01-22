@@ -4,11 +4,15 @@ use self::storage::{Storage, StorageError};
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    // String command
+    // Generic commands
+    Del(Vec<Key>),
+
+    // String commands
     Get(Key),
     Set(Key, Vec<u8>),
     SetNx(Key, Vec<u8>),
     GetSet(Key, Vec<u8>),
+    GetDel(Key),
     MGet(Vec<Key>),
     MSet(Vec<Key>, Vec<Vec<u8>>),
 }
@@ -43,6 +47,13 @@ impl Core {
 
     pub fn handle_command(&mut self, command: Command) -> CommandResponse {
         match command {
+            Command::Del(keys) => {
+                let deleted_count = keys
+                    .into_iter()
+                    .filter(|key| self.storage.delete(key))
+                    .count();
+                CommandResponse::Integer(deleted_count as isize)
+            }
             Command::Get(key) => self.get(&key),
             Command::Set(key, value) => {
                 self.storage.set(key, VString(value));
@@ -56,18 +67,56 @@ impl Core {
                 }
                 Err(error) => Core::translate_error(error),
             },
-            Command::GetSet(key, value) => match self.storage.get(&key) {
-                Ok(Some(VString(bytes))) => {
-                    let response = CommandResponse::BulkString(bytes.to_owned());
-                    self.storage.set(key, VString(value));
-                    response
+            command @ (Command::GetSet(_, _) | Command::GetDel(_)) => {
+                let operator = if matches!(command, Command::GetSet(_, _)) {
+                    "GET"
+                } else if matches!(command, Command::GetDel(_)) {
+                    "DEL"
+                } else {
+                    unreachable!();
+                };
+
+                let (key, value) = match command {
+                    Command::GetSet(key, value) => (key, value),
+                    // Leave it as vec so compiler doesn't complain about ununiformed types
+                    Command::GetDel(key) => (key, vec![]),
+                    _ => unreachable!(),
+                };
+
+                match self.storage.get(&key) {
+                    Ok(Some(VString(bytes))) => {
+                        let response = CommandResponse::BulkString(bytes.to_owned());
+
+                        // I can't find a way to extract this function to a separate closure
+                        // without pissing off the borrow checker
+                        match operator {
+                            "GET" => {
+                                self.storage.set(key, VString(value));
+                            }
+                            "DEL" => {
+                                self.storage.delete(&key);
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        response
+                    }
+                    Ok(None) => {
+                        match operator {
+                            "GET" => {
+                                self.storage.set(key, VString(value));
+                            }
+                            "DEL" => {
+                                self.storage.delete(&key);
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        CommandResponse::Null
+                    }
+                    Err(error) => Core::translate_error(error),
                 }
-                Ok(None) => {
-                    self.storage.set(key, VString(value));
-                    CommandResponse::Null
-                }
-                Err(error) => Core::translate_error(error),
-            },
+            }
             Command::MGet(keys) => {
                 let values = keys
                     .iter()
@@ -107,6 +156,24 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::{Command, CommandResponse, Core, Key};
+
+    #[test]
+    fn del_and_get_del() {
+        let mut core = Core::new();
+        let command = Command::Set(key("key1"), string("123"));
+        core.handle_command(command);
+
+        let command = Command::Del(vec![key("key1"), key("key2")]);
+        let response = core.handle_command(command);
+        assert_eq!(response, CommandResponse::Integer(1));
+
+        let command = Command::Set(key("key1"), string("123"));
+        core.handle_command(command);
+
+        let command = Command::GetDel(key("key1"));
+        let response = core.handle_command(command);
+        assert_eq!(response, CommandResponse::BulkString(string("123")));
+    }
 
     #[test]
     fn get_and_set() {
