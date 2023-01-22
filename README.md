@@ -7,6 +7,7 @@ This project serves as Rust learning materials.
 - [ ] EXPIRE
 - [ ] TTL
 - [ ] EXISTS
+- [x] FLUSH
 
 2. [String commands](https://redis.io/commands/?group=string)
 - [x] GET

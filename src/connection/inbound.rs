@@ -39,6 +39,8 @@ impl<T: Read> CommandIter<T> {
                     Command::Del(keys)
                 }
 
+                "FLUSHALL" => Command::Flush,
+
                 command @ ("GET" | "GETDEL") => {
                     let key = expect_key(&mut arguments)?;
                     match command {

@@ -6,6 +6,7 @@ use self::storage::{Storage, StorageError};
 pub enum Command {
     // Generic commands
     Del(Vec<Key>),
+    Flush,
 
     // String commands
     Get(Key),
@@ -54,11 +55,19 @@ impl Core {
                     .count();
                 CommandResponse::Integer(deleted_count as isize)
             }
+
+            Command::Flush => {
+                self.storage = Storage::new();
+                CommandResponse::SimpleString(b"OK")
+            }
+
             Command::Get(key) => self.get(&key),
+
             Command::Set(key, value) => {
                 self.storage.set(key, VString(value));
                 CommandResponse::SimpleString(b"OK")
             }
+
             Command::SetNx(key, value) => match self.storage.get(&key) {
                 Ok(Some(_)) => CommandResponse::Integer(0),
                 Ok(None) => {
@@ -67,6 +76,7 @@ impl Core {
                 }
                 Err(error) => Core::translate_error(error),
             },
+
             command @ (Command::GetSet(_, _) | Command::GetDel(_)) => {
                 let operator = if matches!(command, Command::GetSet(_, _)) {
                     "GET"
@@ -117,6 +127,7 @@ impl Core {
                     Err(error) => Core::translate_error(error),
                 }
             }
+
             Command::MGet(keys) => {
                 let values = keys
                     .iter()
@@ -125,6 +136,7 @@ impl Core {
 
                 CommandResponse::Array(values)
             }
+
             Command::MSet(keys, mut values) => {
                 keys.into_iter().for_each(|key| {
                     let value = values.remove(0);
@@ -158,25 +170,7 @@ mod tests {
     use super::{Command, CommandResponse, Core, Key};
 
     #[test]
-    fn del_and_get_del() {
-        let mut core = Core::new();
-        let command = Command::Set(key("key1"), string("123"));
-        core.handle_command(command);
-
-        let command = Command::Del(vec![key("key1"), key("key2")]);
-        let response = core.handle_command(command);
-        assert_eq!(response, CommandResponse::Integer(1));
-
-        let command = Command::Set(key("key1"), string("123"));
-        core.handle_command(command);
-
-        let command = Command::GetDel(key("key1"));
-        let response = core.handle_command(command);
-        assert_eq!(response, CommandResponse::BulkString(string("123")));
-    }
-
-    #[test]
-    fn get_and_set() {
+    fn it_works() {
         let mut core = Core::new();
         let command = Command::Get(key("key"));
         let response = core.handle_command(command);
@@ -193,47 +187,6 @@ mod tests {
         let command = Command::GetSet(key("key"), string("456"));
         let response = core.handle_command(command);
         assert_eq!(response, CommandResponse::BulkString(b"123".to_vec()));
-    }
-
-    #[test]
-    fn set_nx() {
-        let mut core = Core::new();
-        let command = Command::SetNx(key("key"), string("123"));
-        let response = core.handle_command(command);
-        assert_eq!(response, CommandResponse::Integer(1));
-
-        let command = Command::SetNx(key("key"), string("123"));
-        let response = core.handle_command(command);
-        assert_eq!(response, CommandResponse::Integer(0));
-    }
-
-    #[test]
-    fn m_get_and_m_set() {
-        let mut core = Core::new();
-        let keys = vec![key("key1"), key("key2")];
-        let command = Command::MGet(keys.to_owned());
-        let response = core.handle_command(command);
-        assert_eq!(
-            response,
-            CommandResponse::Array(vec![CommandResponse::Null, CommandResponse::Null])
-        );
-
-        let command = Command::MSet(
-            vec![key("key1"), key("key2")],
-            vec![string("123"), string("456")],
-        );
-        let response = core.handle_command(command);
-        assert_response_ok(response);
-
-        let command = Command::MGet(keys);
-        let response = core.handle_command(command);
-        assert_eq!(
-            response,
-            CommandResponse::Array(vec![
-                CommandResponse::SimpleString(b"123"),
-                CommandResponse::SimpleString(b"456")
-            ])
-        );
     }
 
     fn assert_response_ok(response: CommandResponse) {

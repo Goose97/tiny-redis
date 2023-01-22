@@ -16,6 +16,8 @@ log = "0.4.17"
 
 [dev-dependencies]
 redis = "0.22.2"
+rand = "0.8.5"
+serial_test = "1.0.0"
 
 [[bench]]
 name = "main"
