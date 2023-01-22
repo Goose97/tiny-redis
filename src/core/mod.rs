@@ -1,6 +1,6 @@
 pub mod storage;
 
-use self::storage::Storage;
+use self::storage::{Storage, StorageError};
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -24,9 +24,6 @@ pub enum CommandResponse<'a> {
     NullArray,
 }
 
-#[derive(Debug)]
-pub enum CommandError {}
-
 #[derive(Debug, Clone)]
 pub struct Key(pub Vec<u8>);
 
@@ -44,49 +41,65 @@ impl Core {
         }
     }
 
-    pub fn handle_command(&mut self, command: Command) -> Result<CommandResponse, CommandError> {
-        try {
-            match command {
-                Command::Get(key) => self.get(&key),
-                Command::Set(key, value) => {
+    pub fn handle_command(&mut self, command: Command) -> CommandResponse {
+        match command {
+            Command::Get(key) => self.get(&key),
+            Command::Set(key, value) => {
+                self.storage.set(key, VString(value));
+                CommandResponse::SimpleString(b"OK")
+            }
+            Command::SetNx(key, value) => match self.storage.get(&key) {
+                Ok(Some(_)) => CommandResponse::Integer(0),
+                Ok(None) => {
                     self.storage.set(key, VString(value));
-                    CommandResponse::SimpleString(b"OK")
+                    CommandResponse::Integer(1)
                 }
-                Command::SetNx(key, value) => match self.storage.get(&key) {
-                    Some(_) => CommandResponse::Integer(0),
-                    None => {
-                        self.storage.set(key, VString(value));
-                        CommandResponse::Integer(1)
-                    }
-                },
-                Command::GetSet(key, value) => match self.storage.set(key, VString(value)) {
-                    Some(VString(bytes)) => CommandResponse::BulkString(bytes),
-                    None => CommandResponse::Null,
-                },
-                Command::MGet(keys) => {
-                    let values = keys
-                        .iter()
-                        .map(|key| self.get(&key))
-                        .collect::<Vec<CommandResponse>>();
+                Err(error) => Core::translate_error(error),
+            },
+            Command::GetSet(key, value) => match self.storage.get(&key) {
+                Ok(Some(VString(bytes))) => {
+                    let response = CommandResponse::BulkString(bytes.to_owned());
+                    self.storage.set(key, VString(value));
+                    response
+                }
+                Ok(None) => {
+                    self.storage.set(key, VString(value));
+                    CommandResponse::Null
+                }
+                Err(error) => Core::translate_error(error),
+            },
+            Command::MGet(keys) => {
+                let values = keys
+                    .iter()
+                    .map(|key| self.get(&key))
+                    .collect::<Vec<CommandResponse>>();
 
-                    CommandResponse::Array(values)
-                }
-                Command::MSet(keys, mut values) => {
-                    keys.into_iter().for_each(|key| {
-                        let value = values.remove(0);
-                        self.storage.set(key, VString(value));
-                    });
+                CommandResponse::Array(values)
+            }
+            Command::MSet(keys, mut values) => {
+                keys.into_iter().for_each(|key| {
+                    let value = values.remove(0);
+                    self.storage.set(key, VString(value));
+                });
 
-                    CommandResponse::SimpleString(b"OK")
-                }
+                CommandResponse::SimpleString(b"OK")
             }
         }
     }
 
     fn get(&self, key: &Key) -> CommandResponse {
         match self.storage.get(&key) {
-            Some(value_string) => CommandResponse::SimpleString(value_string.0.as_slice()),
-            None => CommandResponse::Null,
+            Ok(Some(value_string)) => CommandResponse::SimpleString(value_string.0.as_slice()),
+            Ok(None) => CommandResponse::Null,
+            Err(error) => Core::translate_error(error),
+        }
+    }
+
+    fn translate_error(error: StorageError) -> CommandResponse<'static> {
+        match error {
+            StorageError::WrongOperationType => CommandResponse::Error(String::from(
+                "WRONGTYPE Operation against a key holding the wrong kind of value",
+            )),
         }
     }
 }
@@ -99,19 +112,19 @@ mod tests {
     fn get_and_set() {
         let mut core = Core::new();
         let command = Command::Get(key("key"));
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(response, CommandResponse::Null);
 
         let command = Command::Set(key("key"), string("123"));
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_response_ok(response);
 
         let command = Command::Get(key("key"));
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(response, CommandResponse::SimpleString(b"123"));
 
         let command = Command::GetSet(key("key"), string("456"));
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(response, CommandResponse::BulkString(b"123".to_vec()));
     }
 
@@ -119,11 +132,11 @@ mod tests {
     fn set_nx() {
         let mut core = Core::new();
         let command = Command::SetNx(key("key"), string("123"));
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(response, CommandResponse::Integer(1));
 
         let command = Command::SetNx(key("key"), string("123"));
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(response, CommandResponse::Integer(0));
     }
 
@@ -132,7 +145,7 @@ mod tests {
         let mut core = Core::new();
         let keys = vec![key("key1"), key("key2")];
         let command = Command::MGet(keys.to_owned());
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(
             response,
             CommandResponse::Array(vec![CommandResponse::Null, CommandResponse::Null])
@@ -142,11 +155,11 @@ mod tests {
             vec![key("key1"), key("key2")],
             vec![string("123"), string("456")],
         );
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_response_ok(response);
 
         let command = Command::MGet(keys);
-        let response = core.handle_command(command).unwrap();
+        let response = core.handle_command(command);
         assert_eq!(
             response,
             CommandResponse::Array(vec![

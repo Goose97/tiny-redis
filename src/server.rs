@@ -39,14 +39,8 @@ impl Server {
         loop {
             let CommandWithSender(command, sender) = job_queue.dequeue();
             let response = core.handle_command(command);
-
-            match response {
-                Ok(result) => {
-                    let response_bytes = outbound::encode(result);
-                    sender.send(response_bytes).unwrap();
-                }
-                Err(error) => panic!("Encounter error while handle command. Error: {error:?}"),
-            }
+            let response_bytes = outbound::encode(response);
+            sender.send(response_bytes).unwrap();
         }
     }
 }
