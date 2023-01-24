@@ -4,9 +4,9 @@ This project serves as Rust learning materials.
 ## Support commands
 1. [Generic commands](https://redis.io/commands/?group=generic)
 - [X] DEL
-- [ ] EXPIRE
-- [ ] TTL
-- [ ] EXISTS
+- [x] EXPIRE
+- [x] TTL
+- [x] EXISTS
 - [x] FLUSH
 
 2. [String commands](https://redis.io/commands/?group=string)

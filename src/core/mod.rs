@@ -6,6 +6,9 @@ use self::storage::{Storage, StorageError};
 pub enum Command {
     // Generic commands
     Del(Vec<Key>),
+    Expire(Key, usize),
+    Ttl(Key),
+    Exists(Vec<Key>),
     Flush,
 
     // String commands
@@ -16,6 +19,9 @@ pub enum Command {
     GetDel(Key),
     MGet(Vec<Key>),
     MSet(Vec<Key>, Vec<Vec<u8>>),
+
+    // Internal commands
+    ExpIntervalCheck,
 }
 
 #[derive(Debug, PartialEq)]
@@ -29,7 +35,7 @@ pub enum CommandResponse<'a> {
     NullArray,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Key(pub Vec<u8>);
 
 // Value
@@ -48,12 +54,43 @@ impl Core {
 
     pub fn handle_command(&mut self, command: Command) -> CommandResponse {
         match command {
+            Command::ExpIntervalCheck => {
+                for key in self.storage.scan_expired_keys() {
+                    self.storage.delete(&key);
+                }
+
+                CommandResponse::Null
+            }
+
             Command::Del(keys) => {
                 let deleted_count = keys
                     .into_iter()
                     .filter(|key| self.storage.delete(key))
                     .count();
                 CommandResponse::Integer(deleted_count as isize)
+            }
+
+            Command::Expire(key, ttl) => {
+                if self.storage.is_exist(&key) {
+                    let milliseconds: u64 = u64::try_from(ttl * 1000).unwrap();
+                    self.storage.expire(&key, milliseconds);
+                    CommandResponse::Integer(1)
+                } else {
+                    CommandResponse::Integer(0)
+                }
+            }
+
+            Command::Ttl(key) => {
+                let ttl = self.storage.ttl(&key);
+                CommandResponse::Integer(ttl)
+            }
+
+            Command::Exists(keys) => {
+                let count = keys
+                    .into_iter()
+                    .filter(|key| self.storage.is_exist(key))
+                    .count();
+                CommandResponse::Integer(count as isize)
             }
 
             Command::Flush => {

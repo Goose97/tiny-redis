@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::connection::{inbound, outbound};
 use crate::core::{Command, Core};
@@ -19,7 +19,7 @@ pub struct Server {
 }
 
 #[derive(Clone)]
-pub struct CommandWithSender(Command, Sender<Vec<u8>>);
+pub struct CommandWithSender(Command, Option<Sender<Vec<u8>>>);
 
 impl Server {
     pub fn start(&self) {
@@ -35,12 +35,22 @@ impl Server {
         let job_queue_clone = job_queue.clone();
         thread::spawn(move || accept_loop(listener, job_queue_clone));
 
+        // Expiration interval check
+        let job_queue_clone_1 = job_queue.clone();
+        thread::spawn(move || loop {
+            job_queue_clone_1.enqueue(CommandWithSender(Command::ExpIntervalCheck, None));
+            thread::sleep(Duration::from_millis(100));
+        });
+
         // Main thread
         loop {
             let CommandWithSender(command, sender) = job_queue.dequeue();
             let response = core.handle_command(command);
             let response_bytes = outbound::encode(response);
-            sender.send(response_bytes).unwrap();
+
+            if let Some(sender) = sender {
+                sender.send(response_bytes).unwrap();
+            }
         }
     }
 }
@@ -69,7 +79,7 @@ fn handle_connection(stream: TcpStream, job_queue: Queue<CommandWithSender>) {
         log::debug!("Parse command: {command:?}. Took: {duration:?}");
 
         let start = Instant::now();
-        job_queue.enqueue(CommandWithSender(command, tx));
+        job_queue.enqueue(CommandWithSender(command, Some(tx)));
         let duration = start.elapsed();
         log::debug!("Enqueue took: {duration:?}");
 

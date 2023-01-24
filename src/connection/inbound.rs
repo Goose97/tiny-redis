@@ -34,18 +34,30 @@ impl<T: Read> CommandIter<T> {
 
         try {
             match command.borrow() {
-                "DEL" => {
+                command @ ("DEL" | "EXISTS") => {
                     let keys = expect_keys(&mut arguments)?;
-                    Command::Del(keys)
+
+                    match command {
+                        "DEL" => Command::Del(keys),
+                        "EXISTS" => Command::Exists(keys),
+                        _ => unreachable!(),
+                    }
+                }
+
+                "EXPIRE" => {
+                    let key = expect_key(&mut arguments)?;
+                    let ttl = expect_binary(&mut arguments)?;
+                    Command::Expire(key, bytes_to_integer(ttl))
                 }
 
                 "FLUSHALL" => Command::Flush,
 
-                command @ ("GET" | "GETDEL") => {
+                command @ ("GET" | "GETDEL" | "TTL") => {
                     let key = expect_key(&mut arguments)?;
                     match command {
                         "GET" => Command::Get(key),
                         "GETDEL" => Command::GetDel(key),
+                        "TTL" => Command::Ttl(key),
                         _ => unreachable!(),
                     }
                 }

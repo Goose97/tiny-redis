@@ -4,6 +4,8 @@ extern crate redis;
 use rand::{distributions::Alphanumeric, Rng};
 use redis::Commands;
 use serial_test::serial;
+use std::thread;
+use std::time::Duration;
 
 #[test]
 #[serial]
@@ -93,6 +95,46 @@ fn del_and_get_del() {
     let result: Option<String> = conn.get_del(&key1).unwrap();
     assert_string(result, "123");
     let result: Option<String> = conn.get_del(&key2).unwrap();
+    assert_eq!(result, None);
+}
+
+#[test]
+#[serial]
+fn exists() {
+    let mut conn = common::setup();
+    let key1 = random_key();
+    let key2 = random_key();
+
+    let result: usize = conn.exists(vec![&key1, &key2]).unwrap();
+    assert_eq!(result, 0);
+
+    set(&mut conn, &key1, "123");
+    set(&mut conn, &key2, "456");
+    let result: usize = conn.exists(vec![&key1, &key2]).unwrap();
+    assert_eq!(result, 2);
+}
+
+#[test]
+#[serial]
+fn expire() {
+    let mut conn = common::setup();
+    let key = random_key();
+
+    let result: isize = conn.ttl(&key).unwrap();
+    assert_eq!(result, -2);
+
+    set(&mut conn, &key, "123");
+    let result: isize = conn.ttl(&key).unwrap();
+    assert_eq!(result, -1);
+
+    let result: usize = conn.expire(&key, 2).unwrap();
+    assert_eq!(result, 1);
+
+    let result: isize = conn.ttl(&key).unwrap();
+    assert_eq!(result, 1);
+
+    thread::sleep(Duration::from_secs(3));
+    let result: Option<String> = conn.get(&key).unwrap();
     assert_eq!(result, None);
 }
 

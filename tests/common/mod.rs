@@ -5,10 +5,7 @@ use tiny_redis::server::Server;
 pub fn setup() -> redis::Connection {
     initialize();
     let client = redis::Client::open("redis://127.0.0.1:7878/").unwrap();
-    let mut conn = client.get_connection().unwrap();
-
-    // redis::cmd("FLUSHALL").execute(&mut conn);
-    conn
+    client.get_connection().unwrap()
 }
 
 static INIT: Once = Once::new();
