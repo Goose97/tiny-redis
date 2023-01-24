@@ -56,7 +56,9 @@ impl Core {
         match command {
             Command::ExpIntervalCheck => {
                 for key in self.storage.scan_expired_keys() {
-                    self.storage.delete(&key);
+                    if let Some(true) = self.storage.is_expire(&key) {
+                        self.storage.delete(&key);
+                    }
                 }
 
                 CommandResponse::Null

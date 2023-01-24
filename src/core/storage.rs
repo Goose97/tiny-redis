@@ -83,6 +83,15 @@ impl Storage {
         self.hash_map.contains_key(&key.0)
     }
 
+    pub fn is_expire(&self, key: &Key) -> Option<bool> {
+        let now = Instant::now();
+        match self.hash_map.get(&key.0) {
+            Some(ValueWithExpiration(_, Some(exp))) if exp <= &now => Some(true),
+            Some(ValueWithExpiration(_, _)) => Some(false),
+            None => None,
+        }
+    }
+
     pub fn expire(&mut self, key: &Key, ttl: u64) {
         let exp = Instant::now()
             .checked_add(Duration::from_millis(ttl))
