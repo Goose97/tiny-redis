@@ -1,12 +1,12 @@
 /// This module handles all the in-memory operations related to
 /// storing/retrieving data
-use super::{Key, VString};
+use super::Key;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
-enum StorageValue {
-    String(VString),
+pub enum StorageValue {
+    String(Vec<u8>),
 }
 
 struct ValueWithExpiration(StorageValue, Option<Instant>);
@@ -50,6 +50,34 @@ pub enum StorageError {
     WrongOperationType,
 }
 
+pub trait ToStorageValue {
+    fn to_storage_value(self) -> StorageValue;
+}
+
+impl ToStorageValue for Vec<u8> {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::String(self)
+    }
+}
+
+impl ToStorageValue for &str {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::String(self.as_bytes().to_vec())
+    }
+}
+
+impl ToStorageValue for &[u8] {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::String(self.to_vec())
+    }
+}
+
+impl<const N: usize> ToStorageValue for &[u8; N] {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::String(self.to_vec())
+    }
+}
+
 impl Storage {
     pub fn new() -> Self {
         Self {
@@ -58,21 +86,19 @@ impl Storage {
         }
     }
 
-    pub fn get(&self, key: &Key) -> Result<Option<&VString>, StorageError> {
+    pub fn get(&self, key: &Key) -> Result<Option<&StorageValue>, StorageError> {
         let now = Instant::now();
         match self.hash_map.get(&key.0) {
             Some(ValueWithExpiration(_, Some(exp))) if exp > &now => Ok(None),
-            Some(ValueWithExpiration(StorageValue::String(value), _)) => Ok(Some(value)),
+            Some(ValueWithExpiration(value, _)) => Ok(Some(value)),
             Some(_other_type) => Err(StorageError::WrongOperationType),
             None => Ok(None),
         }
     }
 
-    pub fn set(&mut self, key: Key, value: VString) {
-        self.hash_map.insert(
-            key.0,
-            ValueWithExpiration(StorageValue::String(value), None),
-        );
+    pub fn set<T: ToStorageValue>(&mut self, key: Key, value: T) {
+        self.hash_map
+            .insert(key.0, ValueWithExpiration(value.to_storage_value(), None));
     }
 
     pub fn delete(&mut self, key: &Key) -> bool {
@@ -138,7 +164,7 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Key, VString};
+    use super::super::Key;
     use super::Storage;
     use std::thread;
     use std::time::Duration;
@@ -166,7 +192,7 @@ mod tests {
         let key = Key(b"key".to_vec());
         assert_eq!(storage.ttl(&key), -2);
 
-        storage.set(key.clone(), VString(b"hello".to_vec()));
+        storage.set(key.clone(), "hello");
         assert_eq!(storage.ttl(&key), -1);
 
         storage.expire(&key, 2_500);

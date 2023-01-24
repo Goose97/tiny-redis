@@ -1,6 +1,6 @@
 pub mod storage;
 
-use self::storage::{Storage, StorageError};
+use self::storage::{Storage, StorageError, StorageValue};
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -37,9 +37,6 @@ pub enum CommandResponse<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Key(pub Vec<u8>);
-
-// Value
-pub struct VString(Vec<u8>);
 
 pub struct Core {
     storage: Storage,
@@ -103,14 +100,14 @@ impl Core {
             Command::Get(key) => self.get(&key),
 
             Command::Set(key, value) => {
-                self.storage.set(key, VString(value));
+                self.storage.set(key, value);
                 CommandResponse::SimpleString(b"OK")
             }
 
             Command::SetNx(key, value) => match self.storage.get(&key) {
                 Ok(Some(_)) => CommandResponse::Integer(0),
                 Ok(None) => {
-                    self.storage.set(key, VString(value));
+                    self.storage.set(key, value);
                     CommandResponse::Integer(1)
                 }
                 Err(error) => Core::translate_error(error),
@@ -133,14 +130,14 @@ impl Core {
                 };
 
                 match self.storage.get(&key) {
-                    Ok(Some(VString(bytes))) => {
+                    Ok(Some(StorageValue::String(bytes))) => {
                         let response = CommandResponse::BulkString(bytes.to_owned());
 
                         // I can't find a way to extract this function to a separate closure
                         // without pissing off the borrow checker
                         match operator {
                             "GET" => {
-                                self.storage.set(key, VString(value));
+                                self.storage.set(key, value);
                             }
                             "DEL" => {
                                 self.storage.delete(&key);
@@ -153,7 +150,7 @@ impl Core {
                     Ok(None) => {
                         match operator {
                             "GET" => {
-                                self.storage.set(key, VString(value));
+                                self.storage.set(key, value);
                             }
                             "DEL" => {
                                 self.storage.delete(&key);
@@ -179,7 +176,7 @@ impl Core {
             Command::MSet(keys, mut values) => {
                 keys.into_iter().for_each(|key| {
                     let value = values.remove(0);
-                    self.storage.set(key, VString(value));
+                    self.storage.set(key, value);
                 });
 
                 CommandResponse::SimpleString(b"OK")
@@ -189,7 +186,9 @@ impl Core {
 
     fn get(&self, key: &Key) -> CommandResponse {
         match self.storage.get(&key) {
-            Ok(Some(value_string)) => CommandResponse::SimpleString(value_string.0.as_slice()),
+            Ok(Some(StorageValue::String(value_string))) => {
+                CommandResponse::SimpleString(value_string)
+            }
             Ok(None) => CommandResponse::Null,
             Err(error) => Core::translate_error(error),
         }
