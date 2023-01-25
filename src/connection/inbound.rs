@@ -52,23 +52,27 @@ impl<T: Read> CommandIter<T> {
 
                 "FLUSHALL" => Command::Flush,
 
-                command @ ("GET" | "GETDEL" | "TTL") => {
+                command @ ("GET" | "GETDEL" | "TTL" | "INCR" | "DECR") => {
                     let key = expect_key(&mut arguments)?;
                     match command {
                         "GET" => Command::Get(key),
                         "GETDEL" => Command::GetDel(key),
                         "TTL" => Command::Ttl(key),
+                        "INCR" => Command::Incr(key),
+                        "DECR" => Command::Decr(key),
                         _ => unreachable!(),
                     }
                 }
 
-                command @ ("SET" | "SETNX" | "GETSET") => {
+                command @ ("SET" | "SETNX" | "GETSET" | "INCRBY" | "DECRBY") => {
                     let key = expect_key(&mut arguments)?;
                     let value = expect_binary(&mut arguments)?;
                     match command {
                         "SET" => Command::Set(key, value),
                         "SETNX" => Command::SetNx(key, value),
                         "GETSET" => Command::GetSet(key, value),
+                        "INCRBY" => Command::IncrBy(key, value),
+                        "DECRBY" => Command::DecrBy(key, value),
                         _ => unreachable!(),
                     }
                 }

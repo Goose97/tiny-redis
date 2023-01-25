@@ -138,6 +138,29 @@ fn expire() {
     assert_eq!(result, None);
 }
 
+#[test]
+#[serial]
+fn incr_decr() {
+    let mut conn = common::setup();
+    let key = random_key();
+
+    let result: isize = conn.incr(&key, 1).unwrap();
+    assert_eq!(result, 1);
+
+    let result: isize = conn.incr(&key, 2).unwrap();
+    assert_eq!(result, 3);
+
+    let result: isize = conn.decr(&key, 5).unwrap();
+    assert_eq!(result, -2);
+
+    let result: isize = conn.get(&key).unwrap();
+    assert_eq!(result, -2);
+
+    set(&mut conn, &key, "abc");
+    assert!(conn.incr::<String, i32, String>(key.clone(), 1).is_err());
+    assert!(conn.decr::<String, i32, String>(key, 1).is_err());
+}
+
 fn set(conn: &mut redis::Connection, key: &str, value: &str) {
     let _result: Option<String> = conn.set(key, value).unwrap();
 }

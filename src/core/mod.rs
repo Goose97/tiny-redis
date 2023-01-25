@@ -1,5 +1,7 @@
 pub mod storage;
 
+use std::num::ParseIntError;
+
 use self::storage::{Storage, StorageError, StorageValue};
 
 #[derive(Debug, Clone)]
@@ -19,6 +21,10 @@ pub enum Command {
     GetDel(Key),
     MGet(Vec<Key>),
     MSet(Vec<Key>, Vec<Vec<u8>>),
+    Incr(Key),
+    Decr(Key),
+    IncrBy(Key, Vec<u8>),
+    DecrBy(Key, Vec<u8>),
 
     // Internal commands
     ExpIntervalCheck,
@@ -130,8 +136,15 @@ impl Core {
                 };
 
                 match self.storage.get(&key) {
-                    Ok(Some(StorageValue::String(bytes))) => {
-                        let response = CommandResponse::BulkString(bytes.to_owned());
+                    Ok(Some(old_value)) => {
+                        let response = match old_value {
+                            StorageValue::String(bytes) => {
+                                CommandResponse::BulkString(bytes.to_owned())
+                            }
+                            StorageValue::Integer(integer) => {
+                                CommandResponse::BulkString(integer.to_string().into_bytes())
+                            }
+                        };
 
                         // I can't find a way to extract this function to a separate closure
                         // without pissing off the borrow checker
@@ -181,6 +194,51 @@ impl Core {
 
                 CommandResponse::SimpleString(b"OK")
             }
+
+            command @ (Command::Incr(_) | Command::Decr(_)) => match command {
+                Command::Incr(key) => match self.storage.incr(&key, 1) {
+                    Ok(new_value) => CommandResponse::Integer(new_value),
+                    Err(error) => Core::translate_error(error),
+                },
+                Command::Decr(key) => match self.storage.incr(&key, -1) {
+                    Ok(new_value) => CommandResponse::Integer(new_value),
+                    Err(error) => Core::translate_error(error),
+                },
+                _ => unreachable!(),
+            },
+
+            command @ (Command::IncrBy(_, _) | Command::DecrBy(_, _)) => {
+                let negative = if matches!(command, Command::IncrBy(_, _)) {
+                    false
+                } else if matches!(command, Command::DecrBy(_, _)) {
+                    true
+                } else {
+                    unreachable!()
+                };
+
+                let (key, value) = match command {
+                    Command::IncrBy(key, value) => (key, value),
+                    Command::DecrBy(key, value) => (key, value),
+                    _ => unreachable!(),
+                };
+
+                match String::from_utf8(value)
+                    .ok()
+                    .and_then(|string| string.parse::<isize>().ok())
+                {
+                    Some(integer) => {
+                        let value = if negative { -integer } else { integer };
+
+                        match self.storage.incr(&key, value) {
+                            Ok(new_value) => CommandResponse::Integer(new_value),
+                            Err(error) => Core::translate_error(error),
+                        }
+                    }
+                    None => CommandResponse::Error(String::from(
+                        "ERR value is not an integer or out of range",
+                    )),
+                }
+            }
         }
     }
 
@@ -189,6 +247,7 @@ impl Core {
             Ok(Some(StorageValue::String(value_string))) => {
                 CommandResponse::SimpleString(value_string)
             }
+            Ok(Some(StorageValue::Integer(integer))) => CommandResponse::Integer(integer.clone()),
             Ok(None) => CommandResponse::Null,
             Err(error) => Core::translate_error(error),
         }
@@ -199,6 +258,9 @@ impl Core {
             StorageError::WrongOperationType => CommandResponse::Error(String::from(
                 "WRONGTYPE Operation against a key holding the wrong kind of value",
             )),
+            StorageError::NotInteger => {
+                CommandResponse::Error(String::from("ERR value is not an integer or out of range"))
+            }
         }
     }
 }

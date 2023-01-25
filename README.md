@@ -17,10 +17,10 @@ This project serves as Rust learning materials.
 - [x] MSET
 - [x] GETSET
 - [x] GETDEL
-- [ ] INCR
-- [ ] DECR
-- [ ] INCRBY
-- [ ] DECRBY
+- [x] INCR
+- [x] DECR
+- [x] INCRBY
+- [x] DECRBY
 
 3. [List commands](https://redis.io/commands/?group=list)
 - [ ] LPOS

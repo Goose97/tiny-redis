@@ -5,8 +5,10 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
+#[derive(Debug, PartialEq)]
 pub enum StorageValue {
     String(Vec<u8>),
+    Integer(isize),
 }
 
 struct ValueWithExpiration(StorageValue, Option<Instant>);
@@ -48,6 +50,7 @@ pub struct Storage {
 #[derive(Debug)]
 pub enum StorageError {
     WrongOperationType,
+    NotInteger,
 }
 
 pub trait ToStorageValue {
@@ -78,6 +81,18 @@ impl<const N: usize> ToStorageValue for &[u8; N] {
     }
 }
 
+impl ToStorageValue for isize {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::Integer(self)
+    }
+}
+
+impl ToStorageValue for usize {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::Integer(self as isize)
+    }
+}
+
 impl Storage {
     pub fn new() -> Self {
         Self {
@@ -87,18 +102,50 @@ impl Storage {
     }
 
     pub fn get(&self, key: &Key) -> Result<Option<&StorageValue>, StorageError> {
-        let now = Instant::now();
-        match self.hash_map.get(&key.0) {
-            Some(ValueWithExpiration(_, Some(exp))) if exp > &now => Ok(None),
-            Some(ValueWithExpiration(value, _)) => Ok(Some(value)),
-            Some(_other_type) => Err(StorageError::WrongOperationType),
+        match self.get_raw(key) {
             None => Ok(None),
+            value @ Some(StorageValue::String(_)) => Ok(value),
+            value @ Some(StorageValue::Integer(_)) => Ok(value),
+            _ => Err(StorageError::WrongOperationType),
         }
     }
 
     pub fn set<T: ToStorageValue>(&mut self, key: Key, value: T) {
         self.hash_map
             .insert(key.0, ValueWithExpiration(value.to_storage_value(), None));
+    }
+
+    // Can use negative value as decr
+    pub fn incr(&mut self, key: &Key, inc: isize) -> Result<isize, StorageError> {
+        match self.get_raw_mut(key) {
+            None => {
+                self.set(key.clone(), 1 as isize);
+                Ok(1)
+            }
+            Some(StorageValue::Integer(integer)) => {
+                *integer += inc;
+                Ok(*integer)
+            }
+            _ => Err(StorageError::NotInteger),
+        }
+    }
+
+    fn get_raw(&self, key: &Key) -> Option<&StorageValue> {
+        let now = Instant::now();
+        match self.hash_map.get(&key.0) {
+            Some(ValueWithExpiration(_, Some(exp))) if *exp > now => None,
+            Some(ValueWithExpiration(value, _)) => Some(value),
+            None => None,
+        }
+    }
+
+    fn get_raw_mut(&mut self, key: &Key) -> Option<&mut StorageValue> {
+        let now = Instant::now();
+        match self.hash_map.get_mut(&key.0) {
+            Some(ValueWithExpiration(_, Some(exp))) if *exp > now => None,
+            Some(ValueWithExpiration(value, _)) => Some(value),
+            None => None,
+        }
     }
 
     pub fn delete(&mut self, key: &Key) -> bool {
@@ -164,10 +211,40 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
+    use crate::core::storage::StorageValue;
+
     use super::super::Key;
     use super::Storage;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn get_set() {
+        let mut storage = Storage::new();
+        let key = Key(b"key".to_vec());
+        storage.set(key.clone(), "abc");
+        assert_eq!(
+            storage.get(&key).unwrap(),
+            Some(&StorageValue::String(b"abc".to_vec()))
+        );
+    }
+
+    #[test]
+    fn incr() {
+        let mut storage = Storage::new();
+        let key = Key(b"key".to_vec());
+
+        let result = storage.incr(&key, 1).unwrap();
+        assert_eq!(result, 1);
+        let result = storage.incr(&key, 2).unwrap();
+        assert_eq!(result, 3);
+        let result = storage.incr(&key, -3).unwrap();
+        assert_eq!(result, 0);
+
+        storage.set(key.clone(), "abc");
+        let result = storage.incr(&key, 1);
+        assert!(result.is_err());
+    }
 
     #[test]
     fn expire() {
@@ -177,7 +254,7 @@ mod tests {
         storage.expire(&key1, 2_000);
         storage.expire(&key2, 3_000);
         thread::sleep(Duration::from_secs(1));
-        assert_eq!(storage.scan_expired_keys().is_empty(), true);
+        assert!(storage.scan_expired_keys().is_empty());
 
         thread::sleep(Duration::from_secs(1));
         assert_eq!(storage.scan_expired_keys(), vec![key1]);
