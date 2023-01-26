@@ -23,11 +23,10 @@ This project serves as Rust learning materials.
 - [x] DECRBY
 
 3. [List commands](https://redis.io/commands/?group=list)
-- [ ] LPOS
-- [ ] LPOP
-- [ ] RPOP
-- [ ] LPUSH
-- [ ] RPUSH
+- [x] LPOP
+- [x] RPOP
+- [x] LPUSH
+- [x] RPUSH
 - [ ] LLEN
 - [ ] LRANGE
 - [ ] LREM

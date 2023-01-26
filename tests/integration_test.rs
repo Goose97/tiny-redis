@@ -4,6 +4,7 @@ extern crate redis;
 use rand::{distributions::Alphanumeric, Rng};
 use redis::Commands;
 use serial_test::serial;
+use std::num::NonZeroUsize;
 use std::thread;
 use std::time::Duration;
 
@@ -96,6 +97,46 @@ fn del_and_get_del() {
     assert_string(result, "123");
     let result: Option<String> = conn.get_del(&key2).unwrap();
     assert_eq!(result, None);
+}
+
+#[test]
+#[serial]
+fn pust_and_pop() {
+    let mut conn = common::setup();
+    let key = random_key();
+
+    let result: usize = conn.lpush(&key, vec!["1", "2"]).unwrap();
+    assert_eq!(result, 2);
+
+    let result: usize = conn.rpush(&key, vec!["1", "2"]).unwrap();
+    assert_eq!(result, 4);
+
+    let result: Option<Vec<String>> = conn.lpop(&key, NonZeroUsize::new(2)).unwrap();
+    assert_eq!(result, Some(vec![String::from("2"), String::from("1")]));
+
+    // Overflow pop
+    let result: Option<Vec<String>> = conn.lpop(&key, NonZeroUsize::new(3)).unwrap();
+    assert_eq!(result.unwrap().len(), 2);
+
+    let result: Option<Vec<String>> = conn.lpop(&key, NonZeroUsize::new(1)).unwrap();
+    assert!(result.is_none());
+
+    let result: usize = conn.rpush(&key, vec!["1", "2", "3", "4"]).unwrap();
+    assert_eq!(result, 4);
+
+    let result: Option<Vec<String>> = conn.rpop(&key, NonZeroUsize::new(2)).unwrap();
+    assert_eq!(result, Some(vec![String::from("4"), String::from("3")]));
+
+    // Overflow pop
+    let result: Option<Vec<String>> = conn.rpop(&key, NonZeroUsize::new(3)).unwrap();
+    assert_eq!(result.unwrap().len(), 2);
+
+    let result: Option<Vec<String>> = conn.rpop(&key, NonZeroUsize::new(1)).unwrap();
+    assert!(result.is_none());
+
+    set(&mut conn, &key, "123");
+    let result = conn.rpush::<&String, Vec<&str>, usize>(&key, vec!["1", "2"]);
+    assert!(result.is_err());
 }
 
 #[test]

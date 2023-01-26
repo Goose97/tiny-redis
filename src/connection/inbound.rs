@@ -18,6 +18,7 @@ pub enum Error {
     UnexpectedToken { expect: Token, found: Option<Token> },
     MissingArguments(usize),
     MissingCrlf,
+    NotInteger,
     IoError(io::Error),
 }
 
@@ -47,7 +48,7 @@ impl<T: Read> CommandIter<T> {
                 "EXPIRE" => {
                     let key = expect_key(&mut arguments)?;
                     let ttl = expect_binary(&mut arguments)?;
-                    Command::Expire(key, bytes_to_integer(ttl))
+                    Command::Expire(key, bytes_to_integer(ttl)? as usize)
                 }
 
                 "FLUSHALL" => Command::Flush,
@@ -107,6 +108,33 @@ impl<T: Read> CommandIter<T> {
                         return Err(Error::MissingArguments(1));
                     } else {
                         Command::MSet(keys, values)
+                    }
+                }
+
+                command @ ("LPUSH" | "RPUSH") => {
+                    let key = expect_key(&mut arguments)?;
+                    let values = expect_binaries(&mut arguments)?;
+
+                    match command {
+                        "LPUSH" => Command::LPush(key, values),
+                        "RPUSH" => Command::RPush(key, values),
+                        _ => unreachable!(),
+                    }
+                }
+
+                command @ ("LPOP" | "RPOP") => {
+                    let key = expect_key(&mut arguments)?;
+                    let count = if arguments.is_empty() {
+                        1
+                    } else {
+                        let value = expect_binary(&mut arguments)?;
+                        bytes_to_integer(value)?
+                    };
+
+                    match command {
+                        "LPOP" => Command::LPop(key, count as usize),
+                        "RPOP" => Command::RPop(key, count as usize),
+                        _ => unreachable!(),
                     }
                 }
 
@@ -192,6 +220,19 @@ fn expect_binary(arguments: &mut Vec<Token>) -> Result<Vec<u8>, Error> {
     }
 }
 
+fn expect_binaries(arguments: &mut Vec<Token>) -> Result<Vec<Vec<u8>>, Error> {
+    let mut values = vec![];
+
+    while !arguments.is_empty() {
+        match expect_binary(arguments) {
+            Ok(value) => values.push(value),
+            Err(error) => return Err(error),
+        }
+    }
+
+    Ok(values)
+}
+
 #[derive(Debug)]
 pub enum Token {
     String(Vec<u8>),
@@ -233,18 +274,18 @@ impl<T: Read> TokenIter<T> {
             // $
             36 => {
                 let line = self.consume_line()?;
-                let bulk_string_len = bytes_to_integer(line);
+                let bulk_string_len = bytes_to_integer(line)?;
 
                 // Consume the length of the string plus following /r/n
-                let string = self.consume_bytes(bulk_string_len)?;
+                let string = self.consume_bytes(bulk_string_len as usize)?;
                 self.consume_bytes(2)?;
                 return Ok(Token::String(string));
             }
             // *
             42 => {
                 let line = self.consume_line().unwrap();
-                let num_of_items = bytes_to_integer(line);
-                return Ok(Token::Array(num_of_items));
+                let num_of_items = bytes_to_integer(line)?;
+                return Ok(Token::Array(num_of_items as usize));
             }
             _ => unreachable!(),
         }
@@ -265,8 +306,11 @@ impl<T: Read> Iterator for TokenIter<T> {
     }
 }
 
-fn bytes_to_integer(bytes: Vec<u8>) -> usize {
-    str::from_utf8(&bytes).unwrap().parse::<usize>().unwrap()
+fn bytes_to_integer(bytes: Vec<u8>) -> Result<isize, Error> {
+    match String::from_utf8(bytes) {
+        Ok(string) => string.parse::<isize>().or(Err(Error::NotInteger)),
+        Err(_) => Err(Error::NotInteger),
+    }
 }
 
 fn bytes_to_string(bytes: Vec<u8>) -> String {

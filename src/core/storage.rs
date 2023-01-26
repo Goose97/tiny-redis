@@ -2,13 +2,14 @@
 /// storing/retrieving data
 use super::Key;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq)]
 pub enum StorageValue {
     String(Vec<u8>),
     Integer(isize),
+    List(VecDeque<Vec<u8>>),
 }
 
 struct ValueWithExpiration(StorageValue, Option<Instant>);
@@ -93,6 +94,24 @@ impl ToStorageValue for usize {
     }
 }
 
+impl ToStorageValue for Vec<Vec<u8>> {
+    fn to_storage_value(self) -> StorageValue {
+        StorageValue::List(VecDeque::from(self))
+    }
+}
+
+impl ToStorageValue for Vec<String> {
+    fn to_storage_value(self) -> StorageValue {
+        let list = self.into_iter().map(|string| string.into_bytes()).collect();
+        StorageValue::List(list)
+    }
+}
+
+pub enum ListEnd {
+    Front,
+    Back,
+}
+
 impl Storage {
     pub fn new() -> Self {
         Self {
@@ -145,6 +164,70 @@ impl Storage {
             Some(ValueWithExpiration(_, Some(exp))) if *exp > now => None,
             Some(ValueWithExpiration(value, _)) => Some(value),
             None => None,
+        }
+    }
+
+    pub fn push(
+        &mut self,
+        key: Key,
+        mut values: Vec<Vec<u8>>,
+        list_end: ListEnd,
+    ) -> Result<usize, StorageError> {
+        match self.get_raw_mut(&key) {
+            None => {
+                let len = values.len();
+                if let ListEnd::Front = list_end {
+                    values.reverse();
+                }
+
+                self.set(key, values);
+                Ok(len)
+            }
+            Some(StorageValue::List(list)) => {
+                for value in values {
+                    match list_end {
+                        ListEnd::Front => list.push_front(value),
+                        ListEnd::Back => list.push_back(value),
+                    }
+                }
+
+                Ok(list.len())
+            }
+            _ => Err(StorageError::WrongOperationType),
+        }
+    }
+
+    pub fn pop(
+        &mut self,
+        key: Key,
+        count: usize,
+        list_end: ListEnd,
+    ) -> Result<Option<Vec<Vec<u8>>>, StorageError> {
+        match self.get_raw_mut(&key) {
+            None => Ok(None),
+            Some(StorageValue::List(list)) => {
+                let mut values = vec![];
+
+                for _ in 1..=count {
+                    let value = match list_end {
+                        ListEnd::Front => list.pop_front(),
+                        ListEnd::Back => list.pop_back(),
+                    };
+
+                    if value.is_some() {
+                        values.push(value.unwrap());
+                    } else {
+                        break;
+                    }
+                }
+
+                if values.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(values))
+                }
+            }
+            _ => Err(StorageError::WrongOperationType),
         }
     }
 
@@ -211,7 +294,7 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::storage::StorageValue;
+    use crate::core::storage::{ListEnd, StorageValue};
 
     use super::super::Key;
     use super::Storage;
@@ -243,6 +326,45 @@ mod tests {
 
         storage.set(key.clone(), "abc");
         let result = storage.incr(&key, 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list() {
+        let mut storage = Storage::new();
+        let key = Key(b"key".to_vec());
+
+        let result: usize = storage
+            .push(
+                key.clone(),
+                vec![b"a".to_vec(), b"b".to_vec()],
+                ListEnd::Front,
+            )
+            .unwrap();
+        assert_eq!(result, 2);
+
+        let result: usize = storage
+            .push(
+                key.clone(),
+                vec![b"c".to_vec(), b"d".to_vec()],
+                ListEnd::Back,
+            )
+            .unwrap();
+        assert_eq!(result, 4);
+
+        let result = storage.pop(key.clone(), 2, ListEnd::Front).unwrap();
+        assert_eq!(result, Some(vec![b"b".to_vec(), b"a".to_vec()]));
+        let result = storage.pop(key.clone(), 2, ListEnd::Back).unwrap();
+        assert_eq!(result, Some(vec![b"d".to_vec(), b"c".to_vec()]));
+        let result = storage.pop(key.clone(), 2, ListEnd::Front).unwrap();
+        assert!(result.is_none());
+
+        storage.set(key.clone(), "abc");
+        let result = storage.push(
+            key.clone(),
+            vec![b"c".to_vec(), b"d".to_vec()],
+            ListEnd::Front,
+        );
         assert!(result.is_err());
     }
 

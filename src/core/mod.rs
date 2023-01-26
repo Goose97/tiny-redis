@@ -1,8 +1,6 @@
 pub mod storage;
 
-use std::num::ParseIntError;
-
-use self::storage::{Storage, StorageError, StorageValue};
+use self::storage::{ListEnd, Storage, StorageError, StorageValue};
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -25,6 +23,12 @@ pub enum Command {
     Decr(Key),
     IncrBy(Key, Vec<u8>),
     DecrBy(Key, Vec<u8>),
+
+    // List commands
+    LPush(Key, Vec<Vec<u8>>),
+    RPush(Key, Vec<Vec<u8>>),
+    LPop(Key, usize),
+    RPop(Key, usize),
 
     // Internal commands
     ExpIntervalCheck,
@@ -144,6 +148,9 @@ impl Core {
                             StorageValue::Integer(integer) => {
                                 CommandResponse::BulkString(integer.to_string().into_bytes())
                             }
+                            StorageValue::List(_) => return CommandResponse::Error(String::from(
+                                "WRONGTYPE Operation against a key holding the wrong kind of value",
+                            )),
                         };
 
                         // I can't find a way to extract this function to a separate closure
@@ -239,6 +246,40 @@ impl Core {
                     )),
                 }
             }
+
+            Command::LPush(key, values) => match self.storage.push(key, values, ListEnd::Front) {
+                Ok(size) => CommandResponse::Integer(size as isize),
+                Err(error) => Core::translate_error(error),
+            },
+
+            Command::RPush(key, values) => match self.storage.push(key, values, ListEnd::Back) {
+                Ok(size) => CommandResponse::Integer(size as isize),
+                Err(error) => Core::translate_error(error),
+            },
+
+            Command::LPop(key, count) => match self.storage.pop(key, count, ListEnd::Front) {
+                Ok(None) => CommandResponse::Null,
+                Ok(Some(values)) => {
+                    let items = values
+                        .into_iter()
+                        .map(|item| CommandResponse::BulkString(item))
+                        .collect::<Vec<_>>();
+                    CommandResponse::Array(items)
+                }
+                Err(error) => Core::translate_error(error),
+            },
+
+            Command::RPop(key, count) => match self.storage.pop(key, count, ListEnd::Back) {
+                Ok(None) => CommandResponse::Null,
+                Ok(Some(values)) => {
+                    let items = values
+                        .into_iter()
+                        .map(|item| CommandResponse::BulkString(item))
+                        .collect::<Vec<_>>();
+                    CommandResponse::Array(items)
+                }
+                Err(error) => Core::translate_error(error),
+            },
         }
     }
 
@@ -248,6 +289,9 @@ impl Core {
                 CommandResponse::SimpleString(value_string)
             }
             Ok(Some(StorageValue::Integer(integer))) => CommandResponse::Integer(integer.clone()),
+            Ok(Some(StorageValue::List(_))) => CommandResponse::Error(String::from(
+                "WRONGTYPE Operation against a key holding the wrong kind of value",
+            )),
             Ok(None) => CommandResponse::Null,
             Err(error) => Core::translate_error(error),
         }
