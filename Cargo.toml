@@ -2,10 +2,14 @@
 name = "tiny_redis"
 version = "0.1.0"
 edition = "2021"
+default-run = "tiny_redis"
 
 [lib]
 name = "tiny_redis"
 path = "src/lib.rs"
+
+[[bin]]
+name = "redis_benchmark"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,6 +17,7 @@ path = "src/lib.rs"
 bencher = "0.1.5"
 env_logger = "0.10.0"
 log = "0.4.17"
+regex = "1"
 
 [dev-dependencies]
 redis = "0.22.2"

@@ -545,6 +545,7 @@ dependencies = [
  "log",
  "rand",
  "redis",
+ "regex",
  "serial_test",
 ]
 
