@@ -4,7 +4,6 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
 /// This implemention using VecDeque as storage layer
-/// To mimic blocking behaviour when dequeue, use loop to keep polling
 #[derive(Clone)]
 pub struct Queue<T> {
     queue: Arc<Mutex<VecDeque<T>>>,

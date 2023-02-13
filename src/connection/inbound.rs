@@ -299,7 +299,7 @@ impl<T: Read> Iterator for TokenIter<T> {
         match self.next_token() {
             Ok(token) => Some(token),
             Err(error) => {
-                println!("Encounter error while emiting new token. Error: {error:?}");
+                log::debug!("Encounter error while emiting new token. Error: {error:?}");
                 None
             }
         }
