@@ -1,4 +1,4 @@
--## What is this project?
+## What is this project?
 This project serves as Rust learning materials.
 
 ## Support commands
